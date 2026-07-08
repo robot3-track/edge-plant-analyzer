@@ -129,6 +129,7 @@ export default function PlantAnalyzer() {
         // Render a visible preview image instead of the video stream instantly
         setPreviewImage(fileDataUrl);
         setCameraPaused(false);
+        setStreamActive(false); // Stop showing camera options if a file is uploaded
         
         const img = new Image();
         img.onload = () => {
