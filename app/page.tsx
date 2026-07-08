@@ -32,10 +32,12 @@ export default function PlantAnalyzer() {
   }, []);
 
   const getAdvice = (p: { label: string, score: number }) => {
+    // Safety check for p.label before accessing properties
+    const label = p.label || "";
     if (p.score < 0.05) return "Low baseline confidence. Please ensure the specimen leaf is well-lit and centered inside the frame.";
-    if (p.label.toLowerCase().includes("healthy")) return "Your plant appears to be in good condition. Continue your current care routine.";
-    if (p.label.includes("Unmapped Node ID")) return "Disease mathematical node identified, but biological string mapping is missing from config.json.";
-    return `This sample shows signs of ${p.label.replace(/[:_]/g, ' ')}. We recommend isolating the plant to prevent spread and consulting a local nursery for specific treatment.`;
+    if (label.toLowerCase().includes("healthy")) return "Your plant appears to be in good condition. Continue your current care routine.";
+    if (label.includes("Unmapped Node ID")) return "Disease mathematical node identified, but biological string mapping is missing from config.json.";
+    return `This sample shows signs of ${label.replace(/[:_]/g, ' ')}. We recommend isolating the plant to prevent spread and consulting a local nursery for specific treatment.`;
   };
 
   const startCamera = async () => {
@@ -230,7 +232,8 @@ export default function PlantAnalyzer() {
                   <div key={idx} className="flex flex-col py-4 first:pt-0 last:pb-0">
                     <div className="flex justify-between items-center mb-2">
                       <span className="capitalize text-sm font-medium text-stone-700 tracking-tight">
-                        {p.label.replace(/[:_]/g, ' ')}
+                        {/* FIXED: Added a safety fallback for missing labels */}
+                        {(p.label || "Unknown").replace(/[:_]/g, ' ')}
                       </span>
                       <span className="text-xs font-mono px-2.5 py-1 rounded-full border bg-emerald-50/60 border-emerald-100 text-emerald-800 font-bold">
                         {(p.score * 100).toFixed(0)}% Match
