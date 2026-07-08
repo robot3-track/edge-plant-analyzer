@@ -1,6 +1,9 @@
 import { pipeline, env } from "@huggingface/transformers";
 
-env.allowLocalModels = false;
+// Strictly allow local files only for 100% offline usage
+env.allowRemoteModels = false;
+env.allowLocalModels = true;
+env.localModelPath = "/models/";
 
 let classifier = null;
 
@@ -9,23 +12,24 @@ self.addEventListener("message", async (event) => {
 
   try {
     if (!classifier) {
-      self.postMessage({ status: "loading", message: "Initializing localized plant pathology engine..." });
+      self.postMessage({ status: "loading", message: "Loading local offline plant diagnostic models..." });
       
-      // Loading a dedicated, edge-optimized Vision Transformer trained on crop diseases
       classifier = await pipeline(
-        "image-classification", 
-        "onnx-community/crop_leaf_diseases_vit", 
-        { device: "webgpu" } 
+        "image-classification", // Keep this
+        "plant_analyzer_model",
+        {
+          device: "webgpu",
+          revision: "main",
+          // ADD THIS LINE: Explicitly tells the pipeline it only needs vision layers
+          task: "image-classification" 
+        }
       );
     }
 
-    self.postMessage({ status: "processing", message: "Analyzing cellular layout & leaf tissue..." });
-    
-    // Scan frame against custom botanical vectors
+    self.postMessage({ status: "processing", message: "Analyzing cell structures..." });
     const output = await classifier(image, { top_k: 3 });
-    
     self.postMessage({ status: "success", results: output });
   } catch (error) {
-    self.postMessage({ status: "error", error: error.message });
+    self.postMessage({ status: "error", error: `Offline pipeline execution failed: ${error.message}` });
   }
 });

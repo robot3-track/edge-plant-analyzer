@@ -1,0 +1,12 @@
+{
+  "architectures": ["ResNetForImageClassification"],
+  "model_type": "resnet",
+  "num_channels": 3,
+  "id2label": {
+    "0": "Healthy Plant Leaves",
+    "1": "Fungal Spot Damage",
+    "2": "Bacterial Blight Infection",
+    "3": "Insect Infestation Defoliation",
+    "4": "Nutrient Deficiency Chlorosis"
+  }
+}
