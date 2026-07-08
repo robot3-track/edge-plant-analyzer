@@ -1,11 +1,19 @@
 import { env, pipeline, RawImage } from "@huggingface/transformers";
 
-// Strictly allow local files for offline usage
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
 env.localModelPath = "/models/";
 
 let classifier = null;
+
+// HARDCODED MAPPING: This ensures the UI will definitely show your names
+const LABEL_MAP = {
+  0: "Powdery Mildew",
+  1: "Healthy",
+  2: "Early Blight",
+  3: "Late Blight",
+  4: "Septoria Leaf Spot"
+};
 
 self.addEventListener("message", async (event) => {
   const { action, rgbaData, width, height } = event.data;
@@ -13,26 +21,29 @@ self.addEventListener("message", async (event) => {
   if (action === "analyze") {
     try {
       if (!classifier) {
-        self.postMessage({ status: "loading", message: "Loading offline vision engine..." });
+        self.postMessage({ status: "loading", message: "Initializing pipeline..." });
         classifier = await pipeline("image-classification", "plant_analyzer_model", { quantized: false });
       }
-
-      self.postMessage({ status: "processing", message: "Normalizing cellular data..." });
 
       const pixelData = new Uint8Array(rgbaData.buffer || rgbaData);
       const rawImage = new RawImage(pixelData, width, height, 4).rgb();
       
       const results = await classifier(rawImage, { topk: 5 });
 
-      // Spreading 'r' retains all raw properties from the model
-      // 'fullObject' is passed to the UI for inspection
-      const sanitizedResults = results.map((r, index) => ({
-        ...r, 
-        id: index,
-        label: r.label || `Unmapped Node ID: ${index}`,
-        score: r.score ?? 0,
-        fullObject: r 
-      }));
+      // MANUALLY MAP THE LABELS:
+      // Even if the pipeline doesn't find the label, we look it up using the index
+      const sanitizedResults = results.map((r, index) => {
+        // Use the pipeline's label if it exists (r.label), otherwise use our map
+        const label = r.label || LABEL_MAP[index] || `Node ID: ${index}`;
+        
+        return {
+          ...r,
+          id: index,
+          label: label,
+          score: r.score ?? 0,
+          fullObject: r
+        };
+      });
 
       self.postMessage({ status: "success", results: sanitizedResults });
     } catch (error) {
