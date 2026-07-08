@@ -12,32 +12,26 @@ export default function PlantAnalyzer() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // UI States
   const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [status, setStatus] = useState<string>("Ready to analyze");
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [status, setStatus] = useState<string>("Ready");
   const [results, setResults] = useState<ClassificationResult[]>([]);
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
 
-  // 1. Initialize our winning Web Worker on mount
   useEffect(() => {
     workerRef.current = new Worker(new URL("./worker.js", import.meta.url), {
       type: "module",
     });
 
     workerRef.current.onmessage = (event) => {
-      const { status, message, results, error } = event.data;
+      const { status: workerStatus, message, results: workerResults, error } = event.data;
 
-      if (status === "loading" || status === "processing") {
+      if (workerStatus === "loading" || workerStatus === "processing") {
         setStatus(message);
-        setIsLoading(true);
-      } else if (status === "success") {
-        setResults(results);
+      } else if (workerStatus === "success") {
+        setResults(workerResults);
         setStatus("Analysis complete!");
-        setIsLoading(false);
-      } else if (status === "error") {
+      } else if (workerStatus === "error") {
         setStatus(`Error: ${error}`);
-        setIsLoading(false);
       }
     };
 
@@ -46,7 +40,6 @@ export default function PlantAnalyzer() {
     };
   }, []);
 
-  // 2. Start/Stop Device Camera Stream
   const toggleCamera = async () => {
     if (isCameraActive) {
       stopCamera();
@@ -55,16 +48,16 @@ export default function PlantAnalyzer() {
       setResults([]);
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }, // Prioritize rear camera on mobile
+          video: { facingMode: "environment" },
           audio: false,
         });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           setIsCameraActive(true);
-          setStatus("Camera active. Frame up a leaf!");
+          setStatus("Camera active...");
         }
       } catch (err) {
-        setStatus("Could not access camera. Check permissions.");
+        setStatus("Could not access camera.");
         console.error(err);
       }
     }
@@ -79,7 +72,6 @@ export default function PlantAnalyzer() {
     setIsCameraActive(false);
   };
 
-  // 3. Capture Snapshot from Live Video Stream
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
@@ -87,23 +79,19 @@ export default function PlantAnalyzer() {
       const context = canvas.getContext("2d");
 
       if (context) {
-        // Match sizes
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        // Mirror current frame to hidden canvas
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         const dataUrl = canvas.toDataURL("image/jpeg");
         setImageSrc(dataUrl);
         stopCamera();
 
-        // Convert data URL directly to ImageData arrays for worker pipeline
         analyzeImage(context.getImageData(0, 0, canvas.width, canvas.height));
       }
     }
   };
 
-  // 4. Process Uploaded Local Files (PNG, JPG, etc.)
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -116,7 +104,6 @@ export default function PlantAnalyzer() {
       const targetResult = e.target?.result as string;
       setImageSrc(targetResult);
 
-      // Draw uploaded file onto dummy canvas to extract raw pixels for worker
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
@@ -133,7 +120,6 @@ export default function PlantAnalyzer() {
     reader.readAsDataURL(file);
   };
 
-  // 5. Send payload to your tokenizer-free offline worker
   const analyzeImage = (imageData: ImageData) => {
     if (workerRef.current) {
       workerRef.current.postMessage({ image: imageData });
@@ -141,16 +127,21 @@ export default function PlantAnalyzer() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6 font-sans">
-      <header className="text-center space-y-2">
-        <h1 className="text-3xl font-extrabold tracking-tight text-emerald-600">
-          🌱 Edge Plant Analyzer
-        </h1>
-        <p className="text-gray-500 text-sm">100% Offline Device Diagnostics</p>
-      </header>
+    <main className="flex min-h-screen flex-col items-center justify-center p-24">
+      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
+        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
+          Status:&nbsp;
+          <code className="font-bold">{status}</code>
+        </p>
+        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
+          <span className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0">
+            Edge Plant Analyzer
+          </span>
+        </div>
+      </div>
 
-      {/* Viewport Box (Shows Live Camera Feed OR Selected Static Image) */}
-      <div className="relative border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 overflow-hidden aspect-video flex items-center justify-center shadow-inner">
+      {/* Main Viewport display */}
+      <div className="relative flex place-items-center my-12 border border-gray-300 dark:border-neutral-800 rounded-xl overflow-hidden bg-zinc-800/10 w-[400px] h-[300px] justify-center items-center">
         {isCameraActive && (
           <video
             ref={videoRef}
@@ -163,48 +154,36 @@ export default function PlantAnalyzer() {
         {imageSrc && !isCameraActive && (
           <img
             src={imageSrc}
-            alt="Target scan preview"
+            alt="Upload preview"
             className="w-full h-full object-contain"
           />
         )}
 
         {!isCameraActive && !imageSrc && (
-          <p className="text-gray-400 text-center text-sm px-4">
-            No media active. Stream camera frames or upload a photo to scan pathology.
-          </p>
+          <span className="text-gray-400 text-xs px-4 text-center">No image selected or camera active</span>
         )}
       </div>
 
-      {/* Control Dashboard Action Row */}
-      <div className="flex flex-wrap gap-4 items-center justify-center">
-        {/* Camera Toggle Button */}
+      {/* Control Action Buttons using exact original styling blueprints */}
+      <div className="flex flex-row gap-4 mb-12 font-mono text-sm">
         <button
           onClick={toggleCamera}
-          className={`px-5 py-2.5 rounded-xl font-medium shadow-sm transition-colors ${
-            isCameraActive
-              ? "bg-red-500 text-white hover:bg-red-600"
-              : "bg-emerald-600 text-white hover:bg-emerald-700"
-          }`}
+          className="rounded-xl border border-transparent px-5 py-3 bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 transition-colors"
         >
-          {isCameraActive ? "Turn Off Camera" : "Use Live Camera"}
+          {isCameraActive ? "Close Camera" : "Open Camera"}
         </button>
 
-        {/* Snapshot Capture Action */}
         {isCameraActive && (
           <button
             onClick={capturePhoto}
-            className="px-5 py-2.5 bg-amber-500 text-white font-medium rounded-xl shadow-sm hover:bg-amber-600 transition-colors animate-pulse"
+            className="rounded-xl border border-transparent px-5 py-3 bg-amber-500 text-black hover:bg-amber-600 transition-colors"
           >
-            📸 Capture & Analyze
+            Capture
           </button>
         )}
 
-        {/* Hidden Canvas used for conversion matrix mappings */}
-        <canvas ref={canvasRef} className="hidden" />
-
-        {/* Direct Upload File Selector Wrapper */}
-        <label className="px-5 py-2.5 bg-gray-800 text-white font-medium rounded-xl shadow-sm hover:bg-gray-900 transition-colors cursor-pointer text-center">
-          Upload File (JPG/PNG)
+        <label className="rounded-xl border border-transparent px-5 py-3 bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 transition-colors cursor-pointer">
+          Upload Image
           <input
             type="file"
             accept="image/*"
@@ -214,47 +193,27 @@ export default function PlantAnalyzer() {
         </label>
       </div>
 
-      {/* Diagnostics Readout Panel */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <span className="text-xs uppercase tracking-wider text-gray-400 font-bold">
-            Pipeline Logs
-          </span>
-          <span
-            className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
-              isLoading
-                ? "bg-amber-100 text-amber-800 animate-pulse"
-                : "bg-emerald-100 text-emerald-800"
-            }`}
-          >
-            {status}
-          </span>
-        </div>
+      <canvas ref={canvasRef} className="hidden" />
 
-        {/* Results Matrix Block */}
-        {results.length > 0 && (
-          <div className="space-y-3 pt-2">
-            <h3 className="text-sm font-bold text-gray-700">Inference Probabilities:</h3>
-            {results.map((res, index) => (
-              <div key={index} className="space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium text-gray-800">{res.label}</span>
-                  <span className="font-mono text-emerald-600 font-bold">
-                    {(res.score * 100).toFixed(1)}%
-                  </span>
-                </div>
-                {/* Visual Progress Meter */}
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                  <div
-                    className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(res.score * 100, 100)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+      {/* Results Display Grid */}
+      <div className="grid text-center lg:max-w-5xl lg:w-full lg:grid-cols-3 lg:text-left gap-4 font-mono">
+        {results.map((res, index) => (
+          <div
+            key={index}
+            className="group rounded-lg border border-transparent px-5 py-4 transition-colors border-gray-300 bg-gray-100 dark:border-neutral-700 dark:bg-neutral-800/30"
+          >
+            <h2 className="mb-3 text-lg font-semibold">
+              {res.label}{" "}
+              <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
+                -&gt;
+              </span>
+            </h2>
+            <p className="m-0 text-sm opacity-70 font-bold text-emerald-500">
+              {(res.score * 100).toFixed(2)}% Confidence
+            </p>
           </div>
-        )}
+        ))}
       </div>
-    </div>
+    </main>
   );
 }
