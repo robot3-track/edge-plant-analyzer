@@ -1,163 +1,260 @@
-'use client';
+"use client";
 
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from "react";
+
+interface ClassificationResult {
+  label: string;
+  score: number;
+}
 
 export default function PlantAnalyzer() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const workerRef = useRef<Worker | null>(null);
-  
-  const [streamActive, setStreamActive] = useState(false);
-  const [status, setStatus] = useState('');
-  const [predictions, setPredictions] = useState<any[]>([]);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // UI States
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>("Ready to analyze");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [results, setResults] = useState<ClassificationResult[]>([]);
+  const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
+
+  // 1. Initialize our winning Web Worker on mount
   useEffect(() => {
-    workerRef.current = new Worker(new URL('./worker.js', import.meta.url), {
-      type: 'module',
+    workerRef.current = new Worker(new URL("./worker.js", import.meta.url), {
+      type: "module",
     });
 
     workerRef.current.onmessage = (event) => {
       const { status, message, results, error } = event.data;
-      if (status === 'loading' || status === 'processing') setStatus(message);
-      if (error) setStatus(`Diagnostic failure: ${error}`);
-      if (status === 'success') {
-        setStatus('');
-        setPredictions(results);
+
+      if (status === "loading" || status === "processing") {
+        setStatus(message);
+        setIsLoading(true);
+      } else if (status === "success") {
+        setResults(results);
+        setStatus("Analysis complete!");
+        setIsLoading(false);
+      } else if (status === "error") {
+        setStatus(`Error: ${error}`);
+        setIsLoading(false);
       }
     };
 
-    return () => workerRef.current?.terminate();
+    return () => {
+      workerRef.current?.terminate();
+    };
   }, []);
 
-  const startCamera = async () => {
-    try {
-      // First, try to grab the back camera (ideal for mobile leaf scanning)
-      const constraints: MediaStreamConstraints = {
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false,
-      };
-      
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setStreamActive(true);
-        setStatus('');
-      }
-    } catch (err) {
-      // Fallback: If 'environment' fails (like on a laptop/desktop webcam), try any available video device
+  // 2. Start/Stop Device Camera Stream
+  const toggleCamera = async () => {
+    if (isCameraActive) {
+      stopCamera();
+    } else {
+      setImageSrc(null);
+      setResults([]);
       try {
-        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" }, // Prioritize rear camera on mobile
+          audio: false,
+        });
         if (videoRef.current) {
-          videoRef.current.srcObject = fallbackStream;
-          setStreamActive(true);
-          setStatus('');
+          videoRef.current.srcObject = stream;
+          setIsCameraActive(true);
+          setStatus("Camera active. Frame up a leaf!");
         }
-      } catch (fallbackErr) {
-        setStatus('Please grant camera access to evaluate leaves.');
+      } catch (err) {
+        setStatus("Could not access camera. Check permissions.");
+        console.error(err);
       }
     }
   };
 
-  const captureAndAnalyze = () => {
-    if (!videoRef.current || !canvasRef.current || !workerRef.current) return;
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  };
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+  // 3. Capture Snapshot from Live Video Stream
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext("2d");
 
-    if (ctx) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageDataUrl = canvas.toDataURL('image/jpeg');
-      workerRef.current.postMessage({ image: imageDataUrl });
+      if (context) {
+        // Match sizes
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        // Mirror current frame to hidden canvas
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const dataUrl = canvas.toDataURL("image/jpeg");
+        setImageSrc(dataUrl);
+        stopCamera();
+
+        // Convert data URL directly to ImageData arrays for worker pipeline
+        analyzeImage(context.getImageData(0, 0, canvas.width, canvas.height));
+      }
+    }
+  };
+
+  // 4. Process Uploaded Local Files (PNG, JPG, etc.)
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    stopCamera();
+    setResults([]);
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const targetResult = e.target?.result as string;
+      setImageSrc(targetResult);
+
+      // Draw uploaded file onto dummy canvas to extract raw pixels for worker
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          analyzeImage(ctx.getImageData(0, 0, canvas.width, canvas.height));
+        }
+      };
+      img.src = targetResult;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 5. Send payload to your tokenizer-free offline worker
+  const analyzeImage = (imageData: ImageData) => {
+    if (workerRef.current) {
+      workerRef.current.postMessage({ image: imageData });
     }
   };
 
   return (
-    <main className="max-w-6xl mx-auto min-h-screen bg-[#FBFBFA] text-[#2C302E] px-6 py-12 flex flex-col justify-between font-sans selection:bg-stone-200">
-      
-      {/* Header Block */}
-      <header className="mb-10">
-        <h1 className="text-4xl font-light tracking-tight text-stone-900">Flora Diagnostics</h1>
-        <p className="text-sm text-stone-500 mt-2 font-serif italic">In-browser cellular pathology. Secure, offline, localized data verification.</p>
+    <div className="max-w-2xl mx-auto p-6 space-y-6 font-sans">
+      <header className="text-center space-y-2">
+        <h1 className="text-3xl font-extrabold tracking-tight text-emerald-600">
+          🌱 Edge Plant Analyzer
+        </h1>
+        <p className="text-gray-500 text-sm">100% Offline Device Diagnostics</p>
       </header>
 
-      {/* Main Responsive Grid Layout (Stacks on Mobile, side-by-side on Desktop) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start w-full my-auto">
-        
-        {/* Left Side: Viewport & Controls */}
-        <div className="flex flex-col gap-4 w-full">
-          <div className="relative w-full aspect-[4/3] bg-stone-100 rounded-2xl overflow-hidden border border-stone-200/60 shadow-sm flex items-center justify-center">
-            <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover grayscale-[15%]" />
-            <canvas ref={canvasRef} className="hidden" />
-            
-            {!streamActive && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-100 p-6 text-center">
-                <span className="text-xs tracking-widest text-stone-400 uppercase font-medium mb-3">Hardware Ready</span>
-                <p className="text-sm text-stone-500 max-w-xs">Point device directly at leaf lesions or discoloration fields for dynamic sampling.</p>
-              </div>
-            )}
-          </div>
+      {/* Viewport Box (Shows Live Camera Feed OR Selected Static Image) */}
+      <div className="relative border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 overflow-hidden aspect-video flex items-center justify-center shadow-inner">
+        {isCameraActive && (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            className="w-full h-full object-cover"
+          />
+        )}
 
-          <div>
-            {!streamActive ? (
-              <button onClick={startCamera} className="w-full bg-stone-900 text-stone-50 font-medium text-sm tracking-wide py-4 px-6 rounded-xl hover:bg-stone-800 transition-all shadow-sm active:scale-[0.99]">
-                Initialize Viewport Stream
-              </button>
-            ) : (
-              <button onClick={captureAndAnalyze} className="w-full bg-emerald-800 text-stone-50 font-medium text-sm tracking-wide py-4 px-6 rounded-xl hover:bg-emerald-900 transition-all shadow-sm active:scale-[0.99]">
-                Evaluate Leaf Sample
-              </button>
-            )}
+        {imageSrc && !isCameraActive && (
+          <img
+            src={imageSrc}
+            alt="Target scan preview"
+            className="w-full h-full object-contain"
+          />
+        )}
 
-            {status && (
-              <div className="w-full mt-4 py-3 text-center text-xs tracking-wide text-stone-500 bg-stone-100 border border-stone-200/40 rounded-xl animate-pulse font-serif italic">
-                {status}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Side: Structured Diagnostics Output */}
-        <section className="w-full h-full flex flex-col justify-start">
-          {predictions.length > 0 ? (
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-6 shadow-sm transition-all h-full">
-              <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400 mb-4">Diagnostic Assessment</h2>
-              <div className="divide-y divide-stone-100">
-                {predictions.map((p, idx) => {
-                  const isHealthy = p.label.toLowerCase().includes('healthy');
-                  return (
-                    <div key={idx} className="flex justify-between items-center py-4 first:pt-0 last:pb-0">
-                      <span className="capitalize text-sm font-medium text-stone-700 tracking-tight">
-                        {p.label.replace(/[:_]/g, ' ')}
-                      </span>
-                      <span className={`text-xs font-mono px-2.5 py-1 rounded-full border ${
-                        isHealthy 
-                          ? 'bg-emerald-50/60 border-emerald-100 text-emerald-800 font-bold' 
-                          : 'bg-amber-50/60 border-amber-100 text-amber-900'
-                      }`}>
-                        {(p.score * 100).toFixed(0)}% Match
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="h-full min-h-[250px] border border-dashed border-stone-200 rounded-2xl flex items-center justify-center p-6 text-stone-400 text-sm italic font-serif bg-stone-50/40">
-              Awaiting input scan sample to output findings.
-            </div>
-          )}
-        </section>
-
+        {!isCameraActive && !imageSrc && (
+          <p className="text-gray-400 text-center text-sm px-4">
+            No media active. Stream camera frames or upload a photo to scan pathology.
+          </p>
+        )}
       </div>
 
-      {/* Footer Branding */}
-      <footer className="mt-10 border-t border-stone-200/40 pt-4 text-center">
-        <p className="text-xs text-stone-400 tracking-wide">100% Edge Computing Architecture • No User Data Leaves This Device</p>
-      </footer>
+      {/* Control Dashboard Action Row */}
+      <div className="flex flex-wrap gap-4 items-center justify-center">
+        {/* Camera Toggle Button */}
+        <button
+          onClick={toggleCamera}
+          className={`px-5 py-2.5 rounded-xl font-medium shadow-sm transition-colors ${
+            isCameraActive
+              ? "bg-red-500 text-white hover:bg-red-600"
+              : "bg-emerald-600 text-white hover:bg-emerald-700"
+          }`}
+        >
+          {isCameraActive ? "Turn Off Camera" : "Use Live Camera"}
+        </button>
 
-    </main>
+        {/* Snapshot Capture Action */}
+        {isCameraActive && (
+          <button
+            onClick={capturePhoto}
+            className="px-5 py-2.5 bg-amber-500 text-white font-medium rounded-xl shadow-sm hover:bg-amber-600 transition-colors animate-pulse"
+          >
+            📸 Capture & Analyze
+          </button>
+        )}
+
+        {/* Hidden Canvas used for conversion matrix mappings */}
+        <canvas ref={canvasRef} className="hidden" />
+
+        {/* Direct Upload File Selector Wrapper */}
+        <label className="px-5 py-2.5 bg-gray-800 text-white font-medium rounded-xl shadow-sm hover:bg-gray-900 transition-colors cursor-pointer text-center">
+          Upload File (JPG/PNG)
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+        </label>
+      </div>
+
+      {/* Diagnostics Readout Panel */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <span className="text-xs uppercase tracking-wider text-gray-400 font-bold">
+            Pipeline Logs
+          </span>
+          <span
+            className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
+              isLoading
+                ? "bg-amber-100 text-amber-800 animate-pulse"
+                : "bg-emerald-100 text-emerald-800"
+            }`}
+          >
+            {status}
+          </span>
+        </div>
+
+        {/* Results Matrix Block */}
+        {results.length > 0 && (
+          <div className="space-y-3 pt-2">
+            <h3 className="text-sm font-bold text-gray-700">Inference Probabilities:</h3>
+            {results.map((res, index) => (
+              <div key={index} className="space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium text-gray-800">{res.label}</span>
+                  <span className="font-mono text-emerald-600 font-bold">
+                    {(res.score * 100).toFixed(1)}%
+                  </span>
+                </div>
+                {/* Visual Progress Meter */}
+                <div className="w-full bg-gray-100 rounded-full h-2">
+                  <div
+                    className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(res.score * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
