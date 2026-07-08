@@ -70,22 +70,61 @@ export default function PlantAnalyzer() {
     const ctx = canvas.getContext('2d');
 
     if (ctx) {
+      // Prevent analyzing if video hasn't loaded dimensions yet
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        setStatus('Camera viewport stabilizing. Try again...');
+        return;
+      }
+
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageDataUrl = canvas.toDataURL('image/jpeg');
-      workerRef.current.postMessage({ image: imageDataUrl });
-      setStatus('Analyzing...');
+      
+      // Extract uncompressed byte data safely on the main thread
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      
+      // Pass raw arrays with zero-copy transferable memory allocation for maximum efficiency
+      workerRef.current.postMessage({
+        action: 'analyze',
+        rgbaData: imageData.data,
+        width: imageData.width,
+        height: imageData.height
+      }, [imageData.data.buffer]);
+
+      setStatus('Analyzing camera feed...');
     }
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && workerRef.current) {
+      setStatus('Loading upload file...');
       const reader = new FileReader();
+      
       reader.onload = (e) => {
-        workerRef.current!.postMessage({ image: e.target?.result });
-        setStatus('Analyzing upload...');
+        const img = new Image();
+        img.onload = () => {
+          const canvas = canvasRef.current;
+          const ctx = canvas?.getContext('2d');
+          if (canvas && ctx) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            // Extract uncompressed byte data from upload source
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            workerRef.current!.postMessage({
+              action: 'analyze',
+              rgbaData: imageData.data,
+              width: imageData.width,
+              height: imageData.height
+            }, [imageData.data.buffer]);
+            
+            setStatus('Analyzing uploaded image matrix...');
+          }
+        };
+        img.src = e.target?.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -103,7 +142,7 @@ export default function PlantAnalyzer() {
         
         <div className="flex flex-col gap-4 w-full">
           <div className="relative w-full aspect-[4/3] bg-stone-100 rounded-2xl overflow-hidden border border-stone-200/60 shadow-sm flex items-center justify-center">
-            <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover grayscale-[15%]" />
+            <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
             <canvas ref={canvasRef} className="hidden" />
             
             {!streamActive && (
