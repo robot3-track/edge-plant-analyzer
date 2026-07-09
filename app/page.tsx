@@ -31,22 +31,6 @@ export default function PlantAnalyzer() {
     return () => workerRef.current?.terminate();
   }, []);
 
-  // UPDATED: More specific advice based on your mapped labels
-  const getAdvice = (p: { label: string, score: number }) => {
-    const label = p.label.toLowerCase();
-    if (p.score < 0.10) return "Confidence too low for reliable diagnosis. Ensure lighting is adequate and the leaf is centered.";
-    if (label.includes("healthy")) return "Your plant appears to be in good condition. Continue your current care routine.";
-    if (label.includes("powdery mildew")) return "Powdery Mildew detected. Isolate the plant to prevent spread, improve air circulation, and apply a fungicide or neem oil solution.";
-    if (label.includes("early blight")) return "Early Blight detected. Remove affected lower leaves, mulch the soil to prevent spore splash, and avoid overhead watering.";
-    if (label.includes("late blight")) return "Late Blight detected. This is a severe fungal infection. Immediate removal of the plant is recommended to prevent spreading to other crops.";
-    if (label.includes("septoria leaf spot")) return "Septoria Leaf Spot detected. Prune infected leaves and increase spacing between plants to maximize airflow.";
-    return `Possible signs of ${p.label}. Monitor closely and consult a local nursery for targeted treatment.`;
-  };
-
-  // FILTERING LOGIC: 10% threshold
-  const filtered = predictions.filter(p => p.score >= 0.10);
-  const displayPredictions = filtered.length > 0 ? filtered : predictions;
-
   const startCamera = async () => {
     try {
       setPreviewImage(null);
@@ -180,6 +164,7 @@ export default function PlantAnalyzer() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start w-full my-auto">
         
+        {/* Left Column: Camera / Image Preview */}
         <div className="flex flex-col gap-4 w-full">
           <div className="relative w-full aspect-[4/3] bg-stone-100 rounded-2xl overflow-hidden border border-stone-200/60 shadow-sm flex items-center justify-center">
             
@@ -230,35 +215,44 @@ export default function PlantAnalyzer() {
           </div>
         </div>
 
+        {/* Right Column: Pure Debug Output */}
         <section className="w-full h-full flex flex-col justify-start">
-          {displayPredictions.length > 0 ? (
+          {predictions.length > 0 ? (
             <div className="bg-white border border-stone-200/80 rounded-2xl p-6 shadow-sm transition-all h-full">
-              <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400 mb-4">Diagnostic Assessment</h2>
-              <div className="divide-y divide-stone-100">
-                {displayPredictions.map((p, idx) => (
-                  <div key={idx} className="flex flex-col py-4 first:pt-0 last:pb-0">
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="flex flex-col">
-                        <span className="capitalize text-sm font-medium text-stone-700 tracking-tight">
-                          {p.label.replace(/[:_]/g, ' ')}
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400 mb-4">Raw Model Identifiers</h2>
+              <div className="space-y-4">
+                {predictions.map((p, idx) => (
+                  <div key={idx} className="flex flex-col p-4 border border-stone-200 rounded-xl bg-stone-50/50 shadow-sm">
+                    
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500 block mb-1">
+                          Extracted ID / Label
+                        </span>
+                        <span className="text-lg font-mono font-bold text-stone-900 break-all">
+                          {p.label || p.caseId || p.id || "NULL_OR_MISSING"}
                         </span>
                       </div>
-                      <span className="text-xs font-mono px-2.5 py-1 rounded-full border bg-emerald-50/60 border-emerald-100 text-emerald-800 font-bold">
-                        {(p.score * 100).toFixed(0)}% Match
+                      <span className="text-xs font-bold text-emerald-800 bg-emerald-100/60 border border-emerald-200 px-3 py-1.5 rounded-full whitespace-nowrap ml-4">
+                        {p.score !== undefined ? (p.score * 100).toFixed(2) : "0.00"}% Confidence
                       </span>
                     </div>
-                    {idx === 0 && (
-                      <p className="text-xs text-stone-500 italic font-serif bg-stone-50 p-2 rounded mt-2">
-                        {getAdvice(p)}
-                      </p>
-                    )}
+
+                    {/* Raw Object Dump - Proof of exactly what the worker is returning */}
+                    <div className="mt-1 bg-stone-900 rounded-lg p-3 overflow-x-auto">
+                      <span className="text-[10px] text-emerald-400 font-mono mb-1.5 block uppercase tracking-wider">Complete Worker Payload</span>
+                      <pre className="text-[11px] text-stone-300 font-mono leading-relaxed">
+                        {JSON.stringify(p, null, 2)}
+                      </pre>
+                    </div>
+
                   </div>
                 ))}
               </div>
             </div>
           ) : (
             <div className="h-full min-h-[250px] border border-dashed border-stone-200 rounded-2xl flex items-center justify-center p-6 text-stone-400 text-sm italic font-serif bg-stone-50/40">
-              Awaiting input scan sample to output findings.
+              Awaiting input scan sample to dump raw model identifiers.
             </div>
           )}
         </section>
