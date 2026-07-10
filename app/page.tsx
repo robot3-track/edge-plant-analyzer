@@ -65,7 +65,7 @@ export default function PlantAnalyzer() {
     }
   };
 
-  // FIX: Explicitly return a standard Uint8Array to satisfy the Worker/ONNX Runtime
+  // Explicitly return a standard Uint8Array to satisfy the Worker/ONNX Runtime
   const getAnalysisBuffer = (source: HTMLVideoElement | HTMLImageElement) => {
     const canvas = document.createElement('canvas');
     canvas.width = 224; 
@@ -143,7 +143,7 @@ export default function PlantAnalyzer() {
     <main className="max-w-6xl mx-auto min-h-screen bg-[#FBFBFA] text-[#2C302E] px-6 py-12 flex flex-col font-sans">
       <header className="mb-10">
         <h1 className="text-4xl font-light tracking-tight text-stone-900">Flora Diagnostics</h1>
-        <p className="text-sm text-stone-500 mt-2 font-serif italic">In-browser cellular pathology. Localized ViT inference.</p>
+        <p className="text-sm text-stone-500 mt-2 font-serif italic">In-browser local plant health scanner.</p>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start w-full">
@@ -169,7 +169,7 @@ export default function PlantAnalyzer() {
                   </button>
                 )}
                 <button onClick={captureAndAnalyze} className="w-full bg-emerald-800 text-stone-50 py-4 rounded-xl hover:bg-emerald-900 transition-all">
-                  Evaluate Leaf Sample
+                  Evaluate Camera Sample
                 </button>
               </>
             )}
@@ -186,13 +186,16 @@ export default function PlantAnalyzer() {
           {predictions.length > 0 ? (
             <div className="space-y-4">
               {predictions.map((p, idx) => {
-                const cleanLabel = p.label.replace('___', ' - ').replace(/_/g, ' ');
+                // FIX: Fallback safely if label is missing or undefined to avoid runtime crashes
+                const rawLabel = p.label ?? `Unknown_Class_${idx}`;
+                const cleanLabel = String(rawLabel).replace('___', ' - ').replace(/_/g, ' ');
+                
                 return (
                   <div key={idx} className="p-4 border border-stone-200 rounded-xl bg-stone-50">
                     <div className="flex justify-between items-center">
                       <span className="text-lg font-bold text-stone-900">{cleanLabel}</span>
                       <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full">
-                        {(p.score * 100).toFixed(1)}%
+                        {typeof p.score === 'number' ? `${(p.score * 100).toFixed(1)}%` : 'N/A'}
                       </span>
                     </div>
                   </div>
