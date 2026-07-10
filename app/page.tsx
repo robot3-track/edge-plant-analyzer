@@ -159,7 +159,7 @@ export default function PlantAnalyzer() {
           <div className="flex flex-col gap-2">
             {!streamActive && !previewImage ? (
               <button onClick={startCamera} className="w-full bg-stone-900 text-stone-50 py-4 rounded-xl hover:bg-stone-800 transition-all">
-                Initialize Viewport Stream
+                Take a Picture
               </button>
             ) : (
               <>
