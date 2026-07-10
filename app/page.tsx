@@ -230,7 +230,7 @@ export default function PlantAnalyzer() {
         <div className="flex flex-col gap-4 w-full">
           {/* Dynamic Focus Selection */}
           <div className="w-full">
-            <label className="text-xs font-semibold uppercase text-stone-400 mb-2 block">Focus Species</label>
+            <label className="text-xs font-semibold uppercase text-stone-400 mb-2 block">Filter Species</label>
             <select 
               className="w-full p-4 rounded-xl border border-stone-200 bg-white text-stone-900 shadow-sm"
               value={selectedPlant}
