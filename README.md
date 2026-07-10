@@ -6,7 +6,7 @@ Live website: https://floradiagnostics.vercel.app
 
 ## UN Sustainable Development Goal Alignment
 
-This app covers: UN Sustainable Development Goal 2: Zero Hunger. By helping farmers and home gardeners quickly identify crop diseases, this easy offline app can prevent massive food loss, promote sustainable agriculture, and improve overall food security.
+This app covers: UN Sustainable Development Goal 2: Zero Hunger. By helping farmers and home gardeners quickly identify crop diseases, this easy-to-access offline app can prevent massive food loss, promote sustainable agriculture, and improve overall food security. Furthermore, the importance of this app being able to run offline is crucial especially in rural farms and communities. To be able to quickly provide crop analysis for these locations can be a crucial component in a community's ability to thrive. Since 43% of the world, or 3.5 billion people live in rural communities with minimal connections to the internet- and among these people a total of 2.2 billion people (22%) don't have internet- this app can be a step to providing help to these rural farms.
 
 ## Features
 
