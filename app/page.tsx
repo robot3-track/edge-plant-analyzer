@@ -176,7 +176,7 @@ export default function PlantAnalyzer() {
         height: 224
       }, [rgbaData.buffer]);
 
-      setStatus('Analyzing captured frame...');
+      setStatus('Uploading image, might take a few seconds...');
     }
   };
 
@@ -202,7 +202,7 @@ export default function PlantAnalyzer() {
               width: 224,
               height: 224
             }, [rgbaData.buffer]);
-            setStatus('Analyzing file metrics...');
+            setStatus('Processing Sample, may take a few seconds...');
           }
         };
         img.src = fileDataUrl;
